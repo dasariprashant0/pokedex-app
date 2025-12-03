@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Pokedex",
+    "slug": "react-native-pokedex",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#DC0A2D"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pokedex.app"
+    },
+    "android": {
+      "package": "com.pokedex.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#DC0A2D"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [],
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/your-project-id"
+    }
+  }
+}
