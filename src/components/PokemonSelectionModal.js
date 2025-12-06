@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, Modal, FlatList, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Modal, FlatList, TextInput, TouchableOpacity, ActivityIndicator, Image, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useInfinitePokemonList, usePokemonByIds } from '../hooks/usePokemonQueries';
 import { useAllPokemonSimple } from '../hooks/useAllPokemon';
-import PokemonCard from './PokemonCard';
-import PokemonCardPlaceholder from './PokemonCardPlaceholder'; // Assuming this exists or use null
+import { getPokemonSprite } from '../constants/api';
 import { COLORS } from '../constants/colors';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = (SCREEN_WIDTH - 48) / 2; // 2 columns with padding
 
 const PokemonSelectionModal = ({ visible, onClose, onSelect }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -33,7 +35,7 @@ const PokemonSelectionModal = ({ visible, onClose, onSelect }) => {
         return allPokemonList
             .filter(p => p.name.includes(lowerQuery) || String(p.id).includes(lowerQuery))
             .map(p => p.id)
-            .slice(0, 20); // Limit to 20 results for performance
+            .slice(0, 20);
     }, [searchQuery, allPokemonList]);
 
     const {
@@ -43,19 +45,29 @@ const PokemonSelectionModal = ({ visible, onClose, onSelect }) => {
 
     // 3. Determine what to show
     const isSearching = searchQuery.length > 0;
-    const dataToShow = isSearching ? searchResultsDetails || [] : infinitePokemon;
+    const dataToShow = isSearching
+        ? (searchResultsDetails?.results || searchResultsDetails || [])
+        : infinitePokemon;
     const isLoading = isSearching ? isLoadingSearch : isLoadingInfinite;
 
     const renderItem = ({ item }) => (
-        <PokemonCard
-            pokemon={item}
+        <TouchableOpacity
+            style={styles.card}
             onPress={() => {
                 onSelect(item);
                 onClose();
                 setSearchQuery('');
             }}
-            disabled={false}
-        />
+            activeOpacity={0.7}
+        >
+            <Text style={styles.pokemonId}>#{String(item.id).padStart(3, '0')}</Text>
+            <Image
+                source={{ uri: getPokemonSprite(item.id) }}
+                style={styles.pokemonImage}
+                resizeMode="contain"
+            />
+            <Text style={styles.pokemonName} numberOfLines={1}>{item.name}</Text>
+        </TouchableOpacity>
     );
 
     return (
@@ -100,6 +112,7 @@ const PokemonSelectionModal = ({ visible, onClose, onSelect }) => {
                         keyExtractor={item => String(item.id)}
                         numColumns={2}
                         contentContainerStyle={styles.listContent}
+                        columnWrapperStyle={styles.columnWrapper}
                         onEndReached={() => {
                             if (!isSearching && hasNextPage) {
                                 fetchNextPage();
@@ -167,7 +180,41 @@ const styles = StyleSheet.create({
         color: COLORS.text,
     },
     listContent: {
-        padding: 8,
+        paddingHorizontal: 16,
+        paddingBottom: 20,
+    },
+    columnWrapper: {
+        justifyContent: 'space-between',
+        marginBottom: 12,
+    },
+    card: {
+        width: CARD_WIDTH,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 12,
+        alignItems: 'center',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    pokemonId: {
+        fontSize: 11,
+        color: '#666',
+        alignSelf: 'flex-start',
+    },
+    pokemonImage: {
+        width: 80,
+        height: 80,
+        marginVertical: 8,
+    },
+    pokemonName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#2E3A59',
+        textTransform: 'capitalize',
+        textAlign: 'center',
     },
     centerContainer: {
         flex: 1,

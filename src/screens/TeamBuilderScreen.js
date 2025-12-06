@@ -13,48 +13,132 @@ const TEAM_KEY = '@pokedex_team';
 const MAX_TEAM_SIZE = 6;
 
 const TeamBuilderScreen = ({ navigation }) => {
+  const [team, setTeam] = useState([]);
+  const [teamDetails, setTeamDetails] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState(null);
+  const queryClient = useQueryClient();
 
-  // ... (existing effects)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadTeam();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
-  // ... (existing loadTeam)
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={handleShareTeam} style={{ marginRight: 16 }}>
+          <Ionicons name="share-social-outline" size={24} color="#fff" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, teamDetails]);
 
-  const updateTeam = async (newTeamIds) => {
+  const loadTeam = async () => {
     try {
-      await AsyncStorage.setItem(TEAM_KEY, JSON.stringify(newTeamIds));
-      setTeam(newTeamIds);
-      // Details update will be triggered by re-render or we can manually update:
-      // Actually we should update details immediately if we have the object to avoid flicker
-      // But loadTeam handles full reload. Let's rely on React state for now or invalidation.
-      // Better: manual update of teamDetails state for instant feedback.
+      const teamJson = await AsyncStorage.getItem(TEAM_KEY);
+      if (teamJson) {
+        const ids = JSON.parse(teamJson);
+        setTeam(ids);
+
+        const detailsPromises = ids.map(async (id) => {
+          const cached = queryClient.getQueryData(pokemonKeys.detail(id));
+          if (cached) return cached;
+
+          try {
+            const { getPokemonDetails } = await import('../services/pokemonApi');
+            const details = await queryClient.fetchQuery({
+              queryKey: pokemonKeys.detail(id),
+              queryFn: () => getPokemonDetails(id),
+              staleTime: 1000 * 60 * 10,
+            });
+            return details;
+          } catch (error) {
+            return null;
+          }
+        });
+
+        const details = await Promise.all(detailsPromises);
+        setTeamDetails(details.filter(d => d !== null));
+      } else {
+        setTeam([]);
+        setTeamDetails([]);
+      }
     } catch (error) {
-      Alert.alert('Error', 'Failed to save team');
+      setTeam([]);
+      setTeamDetails([]);
     }
   };
+
+  const removeFromTeam = async (pokemonId) => {
+    try {
+      const updatedTeam = team.filter(id => id !== pokemonId);
+      await AsyncStorage.setItem(TEAM_KEY, JSON.stringify(updatedTeam));
+      setTeam(updatedTeam);
+      setTeamDetails(teamDetails.filter(p => p.id !== pokemonId));
+    } catch (error) {
+      Alert.alert('Error', 'Failed to remove Pokemon from team');
+    }
+  };
+
+  const clearTeam = () => {
+    Alert.alert(
+      'Clear Team',
+      'Are you sure you want to remove all Pokemon from your team?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.setItem(TEAM_KEY, JSON.stringify([]));
+              setTeam([]);
+              setTeamDetails([]);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to clear team');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleShareTeam = async () => {
+    if (teamDetails.length === 0) {
+      Alert.alert('No Team', 'Add Pokemon to your team before sharing!');
+      return;
+    }
+    try {
+      await shareTeam(teamDetails);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share team');
+    }
+  };
+
+  const handlePokemonPress = useCallback((pokemonData) => {
+    navigation.navigate('PokemonDetails', {
+      pokemonId: pokemonData.id,
+      pokemonName: pokemonData.name,
+      availableIds: team,
+    });
+  }, [team, navigation]);
 
   const handleSelectPokemon = async (pokemon) => {
     const newTeam = [...team];
     const newDetails = [...teamDetails];
 
     if (selectedSlotIndex !== null && selectedSlotIndex < MAX_TEAM_SIZE) {
-      // Replacing or Adding at specific index? 
-      // Logic: 
-      // If we clicked an empty slot (index >= team.length): push to end (or splice if logic allows gaps, but array is dense).
-      // If we clicked existing slot: replace.
-
-      // However, our team array is just IDs. 
       if (selectedSlotIndex < newTeam.length) {
         newTeam[selectedSlotIndex] = pokemon.id;
         newDetails[selectedSlotIndex] = pokemon;
       } else {
-        // Adding new
         newTeam.push(pokemon.id);
         newDetails.push(pokemon);
       }
-
     } else {
-      // Fallback append if no index (shouldn't happen with new logic)
       if (newTeam.length < MAX_TEAM_SIZE) {
         newTeam.push(pokemon.id);
         newDetails.push(pokemon);
@@ -71,24 +155,35 @@ const TeamBuilderScreen = ({ navigation }) => {
     setIsModalVisible(true);
   };
 
-  // Replaces navigation logic
   const handleAddPress = () => {
     if (team.length >= MAX_TEAM_SIZE) {
       Alert.alert('Team Full', 'Remove a Pokemon first.');
       return;
     }
-    openSelectionModal(team.length); // Append
+    openSelectionModal(team.length);
+  };
+
+  // Calculate type coverage
+  const getTypeCoverage = () => {
+    const typeCount = {};
+    teamDetails.forEach(pokemon => {
+      if (pokemon && pokemon.types) {
+        pokemon.types.forEach(type => {
+          typeCount[type] = (typeCount[type] || 0) + 1;
+        });
+      }
+    });
+    return typeCount;
   };
 
   const typeCoverage = getTypeCoverage();
 
   const renderTeamSlot = ({ item, index }) => {
     if (!item) {
-      // Empty slot
       return (
         <TouchableOpacity
           style={styles.emptySlot}
-          onPress={() => openSelectionModal(index)} // Correct index from FlatList
+          onPress={() => openSelectionModal(index)}
           activeOpacity={0.7}
         >
           <Ionicons name="add-circle-outline" size={48} color={COLORS.textSecondary} />
@@ -101,7 +196,7 @@ const TeamBuilderScreen = ({ navigation }) => {
       <View style={styles.teamSlotWrapper}>
         <TouchableOpacity
           style={styles.teamSlot}
-          onPress={() => openSelectionModal(index)} // Replace
+          onPress={() => openSelectionModal(index)}
           activeOpacity={0.7}
         >
           <TouchableOpacity
@@ -127,7 +222,7 @@ const TeamBuilderScreen = ({ navigation }) => {
           <Text style={styles.pokemonId}>#{String(item.id).padStart(3, '0')}</Text>
 
           <View style={styles.typesContainer}>
-            {item.types.map((type, idx) => (
+            {item.types && item.types.map((type, idx) => (
               <View
                 key={idx}
                 style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[type] }]}
@@ -141,7 +236,6 @@ const TeamBuilderScreen = ({ navigation }) => {
     );
   };
 
-  // Create array with 6 slots
   const teamSlots = Array(MAX_TEAM_SIZE).fill(null).map((_, idx) => teamDetails[idx] || null);
 
   if (team.length === 0) {
@@ -217,13 +311,19 @@ const TeamBuilderScreen = ({ navigation }) => {
           team.length < MAX_TEAM_SIZE ? (
             <TouchableOpacity
               style={styles.addMoreButton}
-              onPress={navigateToSelectPokemon}
+              onPress={handleAddPress}
             >
               <Ionicons name="add-circle" size={24} color={COLORS.primary} />
               <Text style={styles.addMoreText}>Add More Pokemon</Text>
             </TouchableOpacity>
           ) : null
         }
+      />
+
+      <PokemonSelectionModal
+        visible={isModalVisible}
+        onClose={() => setIsModalVisible(false)}
+        onSelect={handleSelectPokemon}
       />
     </View>
   );
@@ -283,12 +383,14 @@ const styles = StyleSheet.create({
   teamGrid: {
     padding: 8,
   },
-  teamSlot: {
+  teamSlotWrapper: {
     flex: 1,
+    margin: 4,
+  },
+  teamSlot: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    margin: 4,
     alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
@@ -321,10 +423,17 @@ const styles = StyleSheet.create({
     right: 8,
     zIndex: 10,
   },
+  infoButton: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 10,
+  },
   pokemonImage: {
     width: 100,
     height: 100,
     marginBottom: 8,
+    marginTop: 20,
   },
   pokemonName: {
     fontSize: 16,
@@ -408,4 +517,3 @@ const styles = StyleSheet.create({
 });
 
 export default TeamBuilderScreen;
-
