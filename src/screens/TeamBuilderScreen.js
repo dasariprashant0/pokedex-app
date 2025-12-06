@@ -7,6 +7,7 @@ import { pokemonKeys } from '../hooks/usePokemonQueries';
 import { getPokemonSprite } from '../constants/api';
 import { COLORS, TYPE_COLORS } from '../constants/colors';
 import { shareTeam } from '../utils/shareUtils';
+import PokemonSelectionModal from '../components/PokemonSelectionModal';
 
 const TEAM_KEY = '@pokedex_team';
 const MAX_TEAM_SIZE = 6;
@@ -14,13 +15,14 @@ const MAX_TEAM_SIZE = 6;
 const TeamBuilderScreen = ({ navigation }) => {
   const [team, setTeam] = useState([]);
   const [teamDetails, setTeamDetails] = useState([]);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedSlotIndex, setSelectedSlotIndex] = useState(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       loadTeam();
     });
-
     return unsubscribe;
   }, [navigation]);
 
@@ -32,7 +34,7 @@ const TeamBuilderScreen = ({ navigation }) => {
         </TouchableOpacity>
       ),
     });
-  }, [navigation, handleShareTeam]);
+  }, [navigation, teamDetails]);
 
   const loadTeam = async () => {
     try {
@@ -40,12 +42,11 @@ const TeamBuilderScreen = ({ navigation }) => {
       if (teamJson) {
         const ids = JSON.parse(teamJson);
         setTeam(ids);
-        
-        // Load details from cache
+
         const detailsPromises = ids.map(async (id) => {
           const cached = queryClient.getQueryData(pokemonKeys.detail(id));
           if (cached) return cached;
-          
+
           try {
             const { getPokemonDetails } = await import('../services/pokemonApi');
             const details = await queryClient.fetchQuery({
@@ -55,11 +56,10 @@ const TeamBuilderScreen = ({ navigation }) => {
             });
             return details;
           } catch (error) {
-            // Silent fail for production
             return null;
           }
         });
-        
+
         const details = await Promise.all(detailsPromises);
         setTeamDetails(details.filter(d => d !== null));
       } else {
@@ -67,7 +67,6 @@ const TeamBuilderScreen = ({ navigation }) => {
         setTeamDetails([]);
       }
     } catch (error) {
-      // Silent fail for production
       setTeam([]);
       setTeamDetails([]);
     }
@@ -80,7 +79,6 @@ const TeamBuilderScreen = ({ navigation }) => {
       setTeam(updatedTeam);
       setTeamDetails(teamDetails.filter(p => p.id !== pokemonId));
     } catch (error) {
-      // Silent fail for production
       Alert.alert('Error', 'Failed to remove Pokemon from team');
     }
   };
@@ -100,21 +98,12 @@ const TeamBuilderScreen = ({ navigation }) => {
               setTeam([]);
               setTeamDetails([]);
             } catch (error) {
-              // Silent fail for production
               Alert.alert('Error', 'Failed to clear team');
             }
           },
         },
       ]
     );
-  };
-
-  const navigateToSelectPokemon = () => {
-    if (team.length >= MAX_TEAM_SIZE) {
-      Alert.alert('Team Full', 'Your team can only have 6 Pokemon. Remove one to add another.');
-      return;
-    }
-    navigation.navigate('Home');
   };
 
   const handleShareTeam = async () => {
@@ -125,7 +114,6 @@ const TeamBuilderScreen = ({ navigation }) => {
     try {
       await shareTeam(teamDetails);
     } catch (error) {
-      // Silent fail for production
       Alert.alert('Error', 'Failed to share team');
     }
   };
@@ -138,13 +126,52 @@ const TeamBuilderScreen = ({ navigation }) => {
     });
   }, [team, navigation]);
 
+  const handleSelectPokemon = async (pokemon) => {
+    const newTeam = [...team];
+    const newDetails = [...teamDetails];
+
+    if (selectedSlotIndex !== null && selectedSlotIndex < MAX_TEAM_SIZE) {
+      if (selectedSlotIndex < newTeam.length) {
+        newTeam[selectedSlotIndex] = pokemon.id;
+        newDetails[selectedSlotIndex] = pokemon;
+      } else {
+        newTeam.push(pokemon.id);
+        newDetails.push(pokemon);
+      }
+    } else {
+      if (newTeam.length < MAX_TEAM_SIZE) {
+        newTeam.push(pokemon.id);
+        newDetails.push(pokemon);
+      }
+    }
+
+    setTeam(newTeam);
+    setTeamDetails(newDetails);
+    await AsyncStorage.setItem(TEAM_KEY, JSON.stringify(newTeam));
+  };
+
+  const openSelectionModal = (index) => {
+    setSelectedSlotIndex(index);
+    setIsModalVisible(true);
+  };
+
+  const handleAddPress = () => {
+    if (team.length >= MAX_TEAM_SIZE) {
+      Alert.alert('Team Full', 'Remove a Pokemon first.');
+      return;
+    }
+    openSelectionModal(team.length);
+  };
+
   // Calculate type coverage
   const getTypeCoverage = () => {
     const typeCount = {};
     teamDetails.forEach(pokemon => {
-      pokemon.types.forEach(type => {
-        typeCount[type] = (typeCount[type] || 0) + 1;
-      });
+      if (pokemon && pokemon.types) {
+        pokemon.types.forEach(type => {
+          typeCount[type] = (typeCount[type] || 0) + 1;
+        });
+      }
     });
     return typeCount;
   };
@@ -153,11 +180,10 @@ const TeamBuilderScreen = ({ navigation }) => {
 
   const renderTeamSlot = ({ item, index }) => {
     if (!item) {
-      // Empty slot
       return (
-        <TouchableOpacity 
-          style={styles.emptySlot} 
-          onPress={navigateToSelectPokemon}
+        <TouchableOpacity
+          style={styles.emptySlot}
+          onPress={() => openSelectionModal(index)}
           activeOpacity={0.7}
         >
           <Ionicons name="add-circle-outline" size={48} color={COLORS.textSecondary} />
@@ -167,42 +193,49 @@ const TeamBuilderScreen = ({ navigation }) => {
     }
 
     return (
-      <TouchableOpacity 
-        style={styles.teamSlot}
-        onPress={() => handlePokemonPress(item)}
-        onLongPress={() => removeFromTeam(item.id)}
-        activeOpacity={0.7}
-      >
-        <TouchableOpacity 
-          style={styles.removeButton}
-          onPress={() => removeFromTeam(item.id)}
+      <View style={styles.teamSlotWrapper}>
+        <TouchableOpacity
+          style={styles.teamSlot}
+          onPress={() => openSelectionModal(index)}
+          activeOpacity={0.7}
         >
-          <Ionicons name="close-circle" size={24} color={COLORS.error} />
+          <TouchableOpacity
+            style={styles.removeButton}
+            onPress={() => removeFromTeam(item.id)}
+          >
+            <Ionicons name="close-circle" size={24} color={COLORS.error} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.infoButton}
+            onPress={() => handlePokemonPress(item)}
+          >
+            <Ionicons name="information-circle" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+
+          <Image
+            source={{ uri: getPokemonSprite(item.id) }}
+            style={styles.pokemonImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.pokemonName}>{item.name}</Text>
+          <Text style={styles.pokemonId}>#{String(item.id).padStart(3, '0')}</Text>
+
+          <View style={styles.typesContainer}>
+            {item.types && item.types.map((type, idx) => (
+              <View
+                key={idx}
+                style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[type] }]}
+              >
+                <Text style={styles.typeText}>{type}</Text>
+              </View>
+            ))}
+          </View>
         </TouchableOpacity>
-        
-        <Image
-          source={{ uri: getPokemonSprite(item.id) }}
-          style={styles.pokemonImage}
-          resizeMode="contain"
-        />
-        <Text style={styles.pokemonName}>{item.name}</Text>
-        <Text style={styles.pokemonId}>#{String(item.id).padStart(3, '0')}</Text>
-        
-        <View style={styles.typesContainer}>
-          {item.types.map((type, idx) => (
-            <View
-              key={idx}
-              style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[type] }]}
-            >
-              <Text style={styles.typeText}>{type}</Text>
-            </View>
-          ))}
-        </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
-  // Create array with 6 slots
   const teamSlots = Array(MAX_TEAM_SIZE).fill(null).map((_, idx) => teamDetails[idx] || null);
 
   if (team.length === 0) {
@@ -213,13 +246,19 @@ const TeamBuilderScreen = ({ navigation }) => {
         <Text style={styles.emptySubtitle}>
           Create a team of up to 6 Pokemon and see their type coverage!
         </Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.addButton}
-          onPress={navigateToSelectPokemon}
+          onPress={handleAddPress}
         >
           <Ionicons name="add-circle" size={24} color="#fff" />
           <Text style={styles.addButtonText}>Add Pokemon</Text>
         </TouchableOpacity>
+
+        <PokemonSelectionModal
+          visible={isModalVisible}
+          onClose={() => setIsModalVisible(false)}
+          onSelect={handleSelectPokemon}
+        />
       </View>
     );
   }
@@ -270,15 +309,21 @@ const TeamBuilderScreen = ({ navigation }) => {
         contentContainerStyle={styles.teamGrid}
         ListFooterComponent={
           team.length < MAX_TEAM_SIZE ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.addMoreButton}
-              onPress={navigateToSelectPokemon}
+              onPress={handleAddPress}
             >
               <Ionicons name="add-circle" size={24} color={COLORS.primary} />
               <Text style={styles.addMoreText}>Add More Pokemon</Text>
             </TouchableOpacity>
           ) : null
         }
+      />
+
+      <PokemonSelectionModal
+        visible={isModalVisible}
+        onClose={() => setIsModalVisible(false)}
+        onSelect={handleSelectPokemon}
       />
     </View>
   );
@@ -338,12 +383,14 @@ const styles = StyleSheet.create({
   teamGrid: {
     padding: 8,
   },
-  teamSlot: {
+  teamSlotWrapper: {
     flex: 1,
+    margin: 4,
+  },
+  teamSlot: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    margin: 4,
     alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
@@ -376,10 +423,17 @@ const styles = StyleSheet.create({
     right: 8,
     zIndex: 10,
   },
+  infoButton: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 10,
+  },
   pokemonImage: {
     width: 100,
     height: 100,
     marginBottom: 8,
+    marginTop: 20,
   },
   pokemonName: {
     fontSize: 16,
@@ -463,4 +517,3 @@ const styles = StyleSheet.create({
 });
 
 export default TeamBuilderScreen;
-

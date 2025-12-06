@@ -89,6 +89,7 @@ export const shareTeam = async (teamDetails) => {
 
     return result;
   } catch (error) {
+    console.error('Share error:', error);
     // Silent fail for production
     throw error;
   }
