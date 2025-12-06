@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -6,6 +6,11 @@ import AppNavigator from './src/navigation/AppNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { AdvancedFiltersProvider, useAdvancedFilters } from './src/context/AdvancedFiltersContext';
 import AdvancedFiltersScreen from './src/components/AdvancedFiltersModal';
+import {
+  registerForPushNotificationsAsync,
+  addNotificationReceivedListener,
+  addNotificationResponseReceivedListener,
+} from './src/utils/notificationUtils';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +41,44 @@ const AppContent = () => {
 };
 
 export default function App() {
+  const [expoPushToken, setExpoPushToken] = useState('');
+  const notificationListener = useRef();
+  const responseListener = useRef();
+
+  useEffect(() => {
+    // Register for push notifications
+    registerForPushNotificationsAsync().then(token => {
+      if (token) {
+        setExpoPushToken(token);
+        console.log('Expo Push Token:', token);
+      }
+    });
+
+    // Listen for incoming notifications while app is in foreground
+    notificationListener.current = addNotificationReceivedListener(notification => {
+      console.log('Notification received:', notification);
+    });
+
+    // Listen for user interaction with notifications
+    responseListener.current = addNotificationResponseReceivedListener(response => {
+      console.log('Notification response:', response);
+      // Handle navigation based on notification data
+      const data = response.notification.request.content.data;
+      if (data?.type === 'team_update') {
+        // Could navigate to Team Builder screen
+      }
+    });
+
+    return () => {
+      if (notificationListener.current) {
+        notificationListener.current.remove();
+      }
+      if (responseListener.current) {
+        responseListener.current.remove();
+      }
+    };
+  }, []);
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -49,4 +92,3 @@ export default function App() {
     </ErrorBoundary>
   );
 }
-

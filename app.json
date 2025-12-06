@@ -27,7 +27,14 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/pokeball-png-icon.png",
+          "color": "#DC0A2D"
+        }
+      ]
     ],
     "extra": {
       "eas": {
