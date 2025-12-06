@@ -35,10 +35,12 @@
       }
     },
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
-      "url": "https://u.expo.dev/0a38d61d-a3d2-4f74-826f-6cdecb46266c"
+      "url": "https://u.expo.dev/0a38d61d-a3d2-4f74-826f-6cdecb46266c",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
     }
   }
 }
