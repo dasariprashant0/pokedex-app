@@ -66,7 +66,7 @@ const AdvancedFiltersScreen = ({ onClose, filters, onApplyFilters }) => {
         <TouchableOpacity onPress={onClose} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Advanced Filters</Text>
+        <Text style={styles.headerTitle}>Advanced Filters (Beta)</Text>
         <View style={styles.headerSpacer} />
       </View>
 

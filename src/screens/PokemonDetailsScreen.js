@@ -19,6 +19,7 @@ import TypeEffectiveness from '../components/TypeEffectiveness';
 import EvolutionChain from '../components/EvolutionChain';
 import { usePokemonDetails, usePokemonSpecies, useEvolutionChain } from '../hooks/usePokemonQueries';
 import { sharePokemon } from '../utils/shareUtils';
+import { playPokemonCry } from '../utils/soundUtils';
 import { LEGENDARY_POKEMON_IDS, MYTHICAL_POKEMON_IDS } from '../constants/pokemon';
 
 const { width } = Dimensions.get('window');
@@ -229,7 +230,7 @@ const PokemonDetailsScreen = ({ route, navigation }) => {
       >
         <Text style={styles.id}>#{String(pokemon.id).padStart(3, '0')}</Text>
         <Text style={styles.name}>{pokemon.name}</Text>
-        
+
         {/* Legendary/Mythical Tags */}
         <View style={styles.tagsContainer}>
           {LEGENDARY_POKEMON_IDS.includes(pokemon.id) && (
@@ -243,58 +244,66 @@ const PokemonDetailsScreen = ({ route, navigation }) => {
             </View>
           )}
         </View>
-        
-        
+
+        <TouchableOpacity
+          style={styles.cryButton}
+          onPress={() => playPokemonCry(pokemon.id, pokemon.name)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="volume-high" size={24} color="#FFFFFF" />
+          <Text style={styles.cryText}>Play Cry</Text>
+        </TouchableOpacity>
+
         <View style={styles.imageContainer}>
-          <TouchableOpacity 
-            onPress={goToPrevious} 
+          <TouchableOpacity
+            onPress={goToPrevious}
             style={[styles.navButton, styles.navButtonLeft]}
             disabled={
-              availableIds.length > 0 
+              availableIds.length > 0
                 ? availableIds.indexOf(currentPokemonId) === 0
                 : currentPokemonId === 1
             }
           >
-            <Ionicons 
-              name="chevron-back" 
-              size={32} 
+            <Ionicons
+              name="chevron-back"
+              size={32}
               color={
-                (availableIds.length > 0 
+                (availableIds.length > 0
                   ? availableIds.indexOf(currentPokemonId) === 0
                   : currentPokemonId === 1
                 ) ? 'rgba(255,255,255,0.3)' : '#fff'
-              } 
+              }
             />
           </TouchableOpacity>
-          
+
           <Image
             source={{ uri: pokemon.sprites.official }}
             style={styles.image}
             resizeMode="contain"
           />
-          
-          <TouchableOpacity 
-            onPress={goToNext} 
+
+          <TouchableOpacity
+            onPress={goToNext}
             style={[styles.navButton, styles.navButtonRight]}
             disabled={
-              availableIds.length > 0 
+              availableIds.length > 0
                 ? availableIds.indexOf(currentPokemonId) === availableIds.length - 1
                 : currentPokemonId === 1010
             }
           >
-            <Ionicons 
-              name="chevron-forward" 
-              size={32} 
+            <Ionicons
+              name="chevron-forward"
+              size={32}
               color={
-                (availableIds.length > 0 
+                (availableIds.length > 0
                   ? availableIds.indexOf(currentPokemonId) === availableIds.length - 1
                   : currentPokemonId === 1010
                 ) ? 'rgba(255,255,255,0.3)' : '#fff'
-              } 
+              }
             />
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.typesContainer}>
           {pokemon.types.map((type, index) => (
             <View
@@ -314,7 +323,7 @@ const PokemonDetailsScreen = ({ route, navigation }) => {
           {species && (
             <Text style={styles.description}>{species.description}</Text>
           )}
-          
+
           <View style={styles.infoGrid}>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Height</Text>
@@ -458,6 +467,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
     textAlign: 'center',
+  },
+  cryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  cryText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 14,
   },
   imageContainer: {
     flexDirection: 'row',

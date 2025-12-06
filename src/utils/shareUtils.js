@@ -6,28 +6,33 @@ export const sharePokemon = async (pokemon, species) => {
     const stats = pokemon.stats
       .map(stat => `${stat.name}: ${stat.value}`)
       .join('\n');
-    
+
+    const imageUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pokemon.id}.png`;
+
     const message = `Check out ${pokemon.name.toUpperCase()}! 🌟\n\n` +
-      `#${String(pokemon.id).padStart(3, '0')}\n\n` +
-      `Types: ${types}\n` +
-      `Height: ${(pokemon.height / 10).toFixed(1)}m\n` +
-      `Weight: ${(pokemon.weight / 10).toFixed(1)}kg\n\n` +
-      `Base Stats:\n${stats}\n\n` +
-      (species?.description ? `${species.description}\n\n` : '') +
-      (species?.isLegendary ? '⭐ Legendary Pokemon!\n\n' : '') +
-      (species?.isMythical ? '✨ Mythical Pokemon!\n\n' : '') +
-      `Shared from Pokédex App`;
+      `#${String(pokemon.id).padStart(3, '0')}\n` +
+      `──────────────────\n` +
+      `🧬 Types: ${types}\n` +
+      `📏 Height: ${(pokemon.height / 10).toFixed(1)}m\n` +
+      `⚖️ Weight: ${(pokemon.weight / 10).toFixed(1)}kg\n` +
+      `──────────────────\n` +
+      `📊 Base Stats:\n${stats}\n\n` +
+      (species?.description ? `📝 ${species.description}\n\n` : '') +
+      (species?.isLegendary ? '⭐ Legendary Pokemon!\n' : '') +
+      (species?.isMythical ? '✨ Mythical Pokemon!\n' : '') +
+      `\n🔗 View details: https://pokeapi.co/api/v2/pokemon/${pokemon.id}\n` +
+      `\n🖼️ Image: ${imageUrl}\n` +
+      `\n📱 Shared from Pokédex App`;
 
     const result = await Share.share(
       {
         message,
-        ...(Platform.OS === 'ios' && { url: `https://pokeapi.co/api/v2/pokemon/${pokemon.id}` }),
+        url: imageUrl, // iOS: Adds image/URL to share sheet
+        title: `${pokemon.name} - Pokemon Details`, // Android: Title
       },
       {
         subject: `${pokemon.name} - Pokemon Details`,
-        ...(Platform.OS === 'ios' && { 
-          excludedActivityTypes: ['com.apple.UIKit.activity.PostToFacebook']
-        }),
+        dialogTitle: `Share ${pokemon.name}`, // Android
       }
     );
 
@@ -51,7 +56,7 @@ export const shareTeam = async (teamDetails) => {
     }
 
     const teamList = teamDetails
-      .map((pokemon, index) => 
+      .map((pokemon, index) =>
         `${index + 1}. ${pokemon.name.toUpperCase()} (#${String(pokemon.id).padStart(3, '0')}) - ${pokemon.types.join(', ')}`
       )
       .join('\n');

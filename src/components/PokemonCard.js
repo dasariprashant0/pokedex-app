@@ -11,13 +11,15 @@ const PokemonCard = ({ pokemon, onPress }) => {
   }, [pokemon, onPress]);
 
   // Check if Pokemon is legendary or mythical (prefer mythical when both)
-  const isMythical = MYTHICAL_POKEMON_IDS.includes(pokemon.id);
-  const isLegendary = !isMythical && LEGENDARY_POKEMON_IDS.includes(pokemon.id);
+  // Check if Pokemon is legendary or mythical (prefer mythical when both)
+  const id = Number(pokemon.id);
+  const isMythical = MYTHICAL_POKEMON_IDS.includes(id);
+  const isLegendary = !isMythical && LEGENDARY_POKEMON_IDS.includes(id);
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity 
-        onPress={handlePress} 
+      <TouchableOpacity
+        onPress={handlePress}
         style={styles.touchable}
         activeOpacity={0.95}
         underlayColor="transparent"

@@ -43,18 +43,18 @@ export const getPokemonDetails = async (idOrName) => {
   try {
     const response = await api.get(`${ENDPOINTS.POKEMON}/${idOrName}`);
     const pokemon = response.data;
-    
+
     // Also fetch species data for generation, legendary status, etc.
     let speciesData = null;
     try {
       const speciesResponse = await api.get(`${ENDPOINTS.POKEMON_SPECIES}/${idOrName}`);
       const species = speciesResponse.data;
-      
+
       // Get English description
       const englishEntry = species.flavor_text_entries.find(
         entry => entry.language.name === 'en'
       );
-      
+
       speciesData = {
         generation: species.generation.name,
         description: englishEntry ? englishEntry.flavor_text.replace(/\f/g, ' ') : '',
@@ -67,7 +67,7 @@ export const getPokemonDetails = async (idOrName) => {
     } catch (speciesError) {
       // Silent fail for production - species data is optional
     }
-    
+
     return {
       id: pokemon.id,
       name: pokemon.name,
@@ -111,11 +111,11 @@ export const getPokemonListWithBasicDetails = async (offset = 0, limit = 20) => 
   try {
     const response = await api.get(`${ENDPOINTS.POKEMON}?offset=${offset}&limit=${limit}`);
     const pokemonList = response.data.results;
-    
+
     // Convert to our format without individual API calls - MUCH FASTER!
     const pokemonWithBasicDetails = pokemonList.map((pokemon, index) => {
       const pokemonId = getPokemonIdFromUrl(pokemon.url);
-      
+
       return {
         id: pokemonId,
         name: pokemon.name,
@@ -131,7 +131,7 @@ export const getPokemonListWithBasicDetails = async (offset = 0, limit = 20) => 
         needsDetails: true, // Mark that we need to load full details later
       };
     });
-    
+
     return {
       results: pokemonWithBasicDetails,
       count: response.data.count,
@@ -158,14 +158,14 @@ export const getPokemonByGeneration = async (generationId) => {
   try {
     const response = await api.get(`/generation/${generationId}/`);
     const generationData = response.data;
-    
+
     // Extract Pokemon species from the generation
     const pokemonSpecies = generationData.pokemon_species.map(species => ({
       id: getPokemonIdFromUrl(species.url),
       name: species.name,
       url: species.url,
     }));
-    
+
     return {
       generation: generationData.name,
       pokemonSpecies,
@@ -186,15 +186,15 @@ export const getPokemonByGenerations = async (generationIds) => {
   try {
     const generationPromises = generationIds.map(id => getPokemonByGeneration(id));
     const results = await Promise.all(generationPromises);
-    
+
     // Combine all Pokemon from all generations
     const allPokemon = results.flatMap(result => result.pokemonSpecies);
-    
+
     // Remove duplicates (in case a Pokemon appears in multiple generations)
-    const uniquePokemon = allPokemon.filter((pokemon, index, self) => 
+    const uniquePokemon = allPokemon.filter((pokemon, index, self) =>
       index === self.findIndex(p => p.id === pokemon.id)
     );
-    
+
     return {
       generations: results.map(r => r.generation),
       pokemonSpecies: uniquePokemon,
@@ -204,6 +204,76 @@ export const getPokemonByGenerations = async (generationIds) => {
     // Return empty results for production
     return {
       generations: generationIds.map(id => `generation-${id}`),
+      pokemonSpecies: [],
+      count: 0,
+    };
+  }
+};
+
+// Get Pokemon by type (direct API call)
+export const getPokemonByType = async (typeName) => {
+  try {
+    const response = await api.get(`/type/${typeName}`);
+    const typeData = response.data;
+
+    // Extract Pokemon from the type
+    const pokemonSpecies = typeData.pokemon.map(p => ({
+      id: getPokemonIdFromUrl(p.pokemon.url),
+      name: p.pokemon.name,
+      url: p.pokemon.url,
+      slot: p.slot,
+    }));
+
+    return {
+      type: typeData.name,
+      pokemonSpecies,
+      count: pokemonSpecies.length,
+    };
+  } catch (error) {
+    // Return empty results for production
+    return {
+      type: typeName,
+      pokemonSpecies: [],
+      count: 0,
+    };
+  }
+};
+
+// Get Pokemon by multiple types
+export const getPokemonByTypes = async (types) => {
+  try {
+    const typePromises = types.map(type => getPokemonByType(type));
+    const results = await Promise.all(typePromises);
+
+    // If multiple types are selected, we typically want the INTERSECTION (Pokemon having ALL selected types)
+    // OR we might want UNION (Pokemon having ANY of the selected types).
+    // The UI behaves like a filter, so let's match the behavior:
+    // If I select "Fire" and "Water", I usually expect Pokemon that are Fire OR Water (Union) 
+    // OR Pokemon that are exactly Fire AND Water (Intersection).
+    // Most Pokedex apps use Intersection for types (Dual types) or Union.
+    // Let's implement UNION first as it's safer for "filtering" a list to show more.
+    // BUT wait, standard multiple type filter usually means "Has Type A" OR "Has Type B".
+    // HOWEVER, if I select "Fire" and "Flying", maybe I want Charizard.
+    // Let's stick to UNION for now (show all Fire + all Flying) and let the frontend filter further if needed,
+    // or return all and let frontend decide.
+    // The previous implementation was: if (types.some(t => selectedTypes.includes(t))) -> UNION.
+    // GLOBAL CONSENSUS: Type filters in lists are usually UNION.
+
+    const allPokemon = results.flatMap(result => result.pokemonSpecies);
+
+    // Remove duplicates
+    const uniquePokemon = allPokemon.filter((pokemon, index, self) =>
+      index === self.findIndex(p => p.id === pokemon.id)
+    );
+
+    return {
+      types: results.map(r => r.type),
+      pokemonSpecies: uniquePokemon,
+      count: uniquePokemon.length,
+    };
+  } catch (error) {
+    return {
+      types: types,
       pokemonSpecies: [],
       count: 0,
     };
@@ -229,12 +299,12 @@ export const getPokemonSpecies = async (id) => {
   try {
     const response = await api.get(`${ENDPOINTS.POKEMON_SPECIES}/${id}`);
     const species = response.data;
-    
+
     // Get English description
     const englishEntry = species.flavor_text_entries.find(
       entry => entry.language.name === 'en'
     );
-    
+
     return {
       id: species.id,
       name: species.name,
@@ -258,7 +328,7 @@ export const getEvolutionChain = async (url) => {
   try {
     const response = await axios.get(url);
     const chain = response.data.chain;
-    
+
     // Parse evolution chain recursively
     const parseChain = (chainLink) => {
       const pokemon = {
@@ -266,14 +336,14 @@ export const getEvolutionChain = async (url) => {
         id: getPokemonIdFromUrl(chainLink.species.url),
         evolvesTo: [],
       };
-      
+
       if (chainLink.evolves_to && chainLink.evolves_to.length > 0) {
         pokemon.evolvesTo = chainLink.evolves_to.map(parseChain);
       }
-      
+
       return pokemon;
     };
-    
+
     return parseChain(chain);
   } catch (error) {
     // Return null for production - let React Query handle retries
@@ -290,7 +360,7 @@ export const getMoveDetails = async (nameOrId) => {
   try {
     const response = await api.get(`/move/${nameOrId}`);
     const move = response.data;
-    
+
     return {
       id: move.id,
       name: move.name,
@@ -316,7 +386,7 @@ export const getTypeDetails = async (typeName) => {
   try {
     const response = await api.get(`/type/${typeName}`);
     const type = response.data;
-    
+
     return {
       id: type.id,
       name: type.name,

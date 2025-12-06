@@ -5,35 +5,40 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/pokeball-png-icon.png",
     "splash": {
+      "image": "./assets/images/pokeball-png-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#DC0A2D"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pokedex.app"
+      "bundleIdentifier": "com.pokedex.app",
+      "icon": "./assets/images/pokeball-png-icon.png"
     },
     "android": {
       "package": "com.pokedex.app",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/pokeball-png-icon.png",
         "backgroundColor": "#DC0A2D"
       }
     },
     "web": {
       "bundler": "metro"
     },
-    "plugins": [],
+    "plugins": [
+      "expo-audio"
+    ],
     "extra": {
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "0a38d61d-a3d2-4f74-826f-6cdecb46266c"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/your-project-id"
+      "url": "https://u.expo.dev/0a38d61d-a3d2-4f74-826f-6cdecb46266c"
     }
   }
 }

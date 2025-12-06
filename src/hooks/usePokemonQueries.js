@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import { 
+import {
   getPokemonListWithBasicDetails,
-  getPokemonDetails, 
-  getPokemonSpecies, 
-  getEvolutionChain, 
+  getPokemonDetails,
+  getPokemonSpecies,
+  getEvolutionChain,
   getMoveDetails,
   getTypeDetails,
   getPokemonByGenerations,
+  getPokemonByTypes,
 } from '../services/pokemonApi';
 import api from '../services/pokemonApi';
 import { ENDPOINTS, getPokemonSprite } from '../constants/api';
@@ -27,6 +28,7 @@ export const pokemonKeys = {
   move: (id) => [...pokemonKeys.all, 'move', id],
   type: (name) => [...pokemonKeys.all, 'type', name],
   generations: (ids) => [...pokemonKeys.all, 'generations', ids],
+  types: (ids) => [...pokemonKeys.all, 'types', ids],
   byIds: (ids) => [...pokemonKeys.all, 'byIds', ids?.join(',')],
 };
 
@@ -86,7 +88,7 @@ export const usePokemonByIds = (pokemonIds) => {
     queryKey: pokemonKeys.byIds(pokemonIds),
     queryFn: async () => {
       if (!pokemonIds?.length) return { results: [] };
-      
+
       const results = await Promise.all(
         pokemonIds.map(async (id) => {
           try {
@@ -132,6 +134,16 @@ export const usePokemonByGenerations = (generationIds) => {
     queryFn: () => getPokemonByGenerations(generationIds),
     enabled: Boolean(generationIds?.length),
     staleTime: Infinity, // Generations never change
+  });
+};
+
+// Fetch Pokemon by type(s)
+export const usePokemonByTypes = (types) => {
+  return useQuery({
+    queryKey: pokemonKeys.types(types),
+    queryFn: () => getPokemonByTypes(types),
+    enabled: Boolean(types?.length),
+    staleTime: 1000 * 60 * 60, // Types don't change often
   });
 };
 
@@ -187,11 +199,11 @@ export const usePrefetchAdjacentPokemon = () => {
   const prefetchAdjacent = (currentId, availableIds = []) => {
     const ids = availableIds.length > 0 ? availableIds : null;
     const currentIndex = ids?.indexOf(currentId) ?? -1;
-    
-    const prevId = ids 
+
+    const prevId = ids
       ? (currentIndex > 0 ? ids[currentIndex - 1] : null)
       : (currentId > 1 ? currentId - 1 : null);
-      
+
     const nextId = ids
       ? (currentIndex < ids.length - 1 ? ids[currentIndex + 1] : null)
       : (currentId < 1010 ? currentId + 1 : null);

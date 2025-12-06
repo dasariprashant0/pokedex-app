@@ -9,7 +9,7 @@ import EmptyState from '../components/EmptyState';
 import SearchBar from '../components/SearchBar';
 import SortModal from '../components/SortModal';
 import TypeFilter from '../components/TypeFilter';
-import { useInfinitePokemonList, usePokemonByGenerations, usePokemonByIds, useLegendaryPokemonIds, useMythicalPokemonIds } from '../hooks/usePokemonQueries';
+import { useInfinitePokemonList, usePokemonByGenerations, usePokemonByTypes, usePokemonByIds, useLegendaryPokemonIds, useMythicalPokemonIds } from '../hooks/usePokemonQueries';
 import { useAdvancedFilters } from '../context/AdvancedFiltersContext';
 import { COLORS } from '../constants/colors';
 
@@ -42,8 +42,8 @@ const RenderPokemonCard = memo(({ item, onPress }) => {
   }
   return <PokemonCard pokemon={item} onPress={onPress} />;
 }, (prevProps, nextProps) => {
-  return prevProps.item.id === nextProps.item.id && 
-         prevProps.item.isLoading === nextProps.item.isLoading;
+  return prevProps.item.id === nextProps.item.id &&
+    prevProps.item.isLoading === nextProps.item.isLoading;
 });
 
 const HomeScreen = ({ navigation }) => {
@@ -51,10 +51,10 @@ const HomeScreen = ({ navigation }) => {
   const [sortBy, setSortBy] = useState('number');
   const [showSortModal, setShowSortModal] = useState(false);
   const [selectedTypes, setSelectedTypes] = useState([]);
-  
+
   // Use context for advanced filters
   const { openAdvancedFilters, advancedFilters, setAdvancedFilters } = useAdvancedFilters();
-  
+
   const {
     data,
     isLoading,
@@ -68,41 +68,66 @@ const HomeScreen = ({ navigation }) => {
   // Get legendary and mythical Pokemon IDs
   const { data: legendaryIds = [] } = useLegendaryPokemonIds();
   const { data: mythicalIds = [] } = useMythicalPokemonIds();
-  
+
   // Get Pokemon by generation if generation filter is active
   const { data: generationPokemon = null, isLoading: loadingGeneration, isFetching: fetchingGeneration } = usePokemonByGenerations(
     advancedFilters.generations.length > 0 ? advancedFilters.generations : null
   );
 
-  // If generation filter is active and we need details for secondary filters, load details for those IDs
-  const generationIds = useMemo(() => {
-    return generationPokemon?.pokemonSpecies?.map(p => p.id) || [];
-  }, [generationPokemon]);
-
-  const needsGenDetails = useMemo(() => {
-    return advancedFilters.generations.length > 0 && (
-      selectedTypes.length > 0 ||
-      !!advancedFilters.minHeight ||
-      !!advancedFilters.maxHeight ||
-      !!advancedFilters.minWeight ||
-      !!advancedFilters.maxWeight
-    );
-  }, [advancedFilters, selectedTypes]);
-
-  const { data: generationPokemonDetails = null, isLoading: loadingGenDetails, isFetching: fetchingGenDetails } = usePokemonByIds(
-    needsGenDetails ? generationIds : null
+  // Get Pokemon by type if type filter is active
+  const { data: typePokemon = null, isLoading: loadingType, isFetching: fetchingType } = usePokemonByTypes(
+    selectedTypes
   );
 
-  // When filtering by type/height/weight without generation filter, fetch details for list items lacking details
-  const needsListDetails = useMemo(() => {
-    return advancedFilters.generations.length === 0 && (
-      selectedTypes.length > 0 ||
-      !!advancedFilters.minHeight ||
+  // Helper to get IDs from a pokemon list result
+  const getIdsFromList = (list) => list?.pokemonSpecies?.map(p => p.id) || [];
+
+  const generationIds = useMemo(() => getIdsFromList(generationPokemon), [generationPokemon]);
+  const typeIds = useMemo(() => getIdsFromList(typePokemon), [typePokemon]);
+
+  // Determine if we need to fetch details for specific lists
+  const needsDetailsFromMetadata = useMemo(() => {
+    return !!advancedFilters.minHeight ||
       !!advancedFilters.maxHeight ||
       !!advancedFilters.minWeight ||
-      !!advancedFilters.maxWeight
-    );
-  }, [advancedFilters, selectedTypes]);
+      !!advancedFilters.maxWeight ||
+      advancedFilters.hasEvolution;
+    // Note: If we are showing "Type" results, we already know they match the type, 
+    // but we don't have height/weight.
+  }, [advancedFilters]);
+
+  // If we have generation or type filters, we might need details for them
+  const idsNeedingDetails = useMemo(() => {
+    let idsToFetch = new Set();
+
+    // If filtering by generation, we might need details
+    if (generationIds.length > 0 && needsDetailsFromMetadata) {
+      generationIds.forEach(id => idsToFetch.add(id));
+    }
+
+    // If filtering by type, we ALWAYS need details if we also filter by stats,
+    // OR if we just want to show the full card info nicely (types, etc are missing in basic list).
+    // Actually the basic list from API type endpoint gives {name, url}. 
+    // Our card needs types to display the chips. So we pretty much ALWAYS need details for type results
+    // unless we want to show placeholders.
+    // Let's fetch details for type results if they are active.
+    if (typeIds.length > 0) {
+      typeIds.forEach(id => idsToFetch.add(id));
+    }
+
+    return Array.from(idsToFetch);
+  }, [generationIds, typeIds, needsDetailsFromMetadata]);
+
+  // Fetch details for the filtered sets (Generation / Type)
+  const { data: filteredDetails = null, isLoading: loadingFilteredDetails, isFetching: fetchingFilteredDetails } = usePokemonByIds(
+    idsNeedingDetails.length > 0 ? idsNeedingDetails : null
+  );
+
+  // When NOT filtering by gen/type (pure list or search), check if visible items need details
+  // This applies when using the Infinite List + Height/Weight/Type filters (Type is now separate though)
+  const needsListDetails = useMemo(() => {
+    return advancedFilters.generations.length === 0 && selectedTypes.length === 0 && needsDetailsFromMetadata;
+  }, [advancedFilters, selectedTypes, needsDetailsFromMetadata]);
 
   // Flatten all pages into a single array (must be before listIdsNeedingDetails)
   const allPokemon = useMemo(() => {
@@ -135,98 +160,148 @@ const HomeScreen = ({ navigation }) => {
   const filteredPokemon = useMemo(() => {
     // Merge any fetched details into the base list
     const detailsMap = new Map();
-    if (generationPokemonDetails?.results) {
-      generationPokemonDetails.results.forEach(p => detailsMap.set(p.id, p));
+    if (filteredDetails?.results) {
+      filteredDetails.results.forEach(p => detailsMap.set(p.id, p));
     }
     if (listDetails?.results) {
       listDetails.results.forEach(p => detailsMap.set(p.id, p));
     }
 
-    const baseList = allPokemon.map(p => detailsMap.get(p.id) || p);
-
-    let filtered = baseList;
-    
-    // STEP 1: Apply legendary/mythical filter (with generation filtering built-in)
+    // Determine the base set of Pokemon to filter
+    let candidates = [];
     const hasGenerationFilter = advancedFilters.generations.length > 0;
-    const wantsLegendary = advancedFilters.isLegendary && legendaryPokemon;
-    const wantsMythical = advancedFilters.isMythical && mythicalPokemon;
-    
-    if (wantsLegendary || wantsMythical) {
-      // Combine legendary and mythical if both are selected
-      let combinedResults = [];
-      
-      if (wantsLegendary) {
-        let legendaryResults = legendaryPokemon.results || [];
-        if (hasGenerationFilter) {
-          legendaryResults = legendaryResults.filter(p => isInGenerations(p.id, advancedFilters.generations));
-        }
-        combinedResults = [...combinedResults, ...legendaryResults];
+    const hasTypeFilter = selectedTypes.length > 0;
+    const wantsLegendary = advancedFilters.isLegendary;
+    const wantsMythical = advancedFilters.isMythical;
+
+    // STRATEGY: 
+    // 1. If Gen, Type, Legendary, or Mythical filters are active, start with those dedicated lists (Union/Intersection).
+    // 2. If NO such filters, start with "allPokemon" (infinite scroll list).
+
+    if (hasGenerationFilter || hasTypeFilter || wantsLegendary || wantsMythical) {
+      // We are in "Special Filter Mode"
+
+      // Collect valid sets
+      let validSets = [];
+
+      if (hasGenerationFilter && generationPokemon) {
+        // Adapt to common format
+        const genSet = generationPokemon.pokemonSpecies.map(p => ({ ...p, fromGen: true }));
+        validSets.push(genSet);
       }
-      
-      if (wantsMythical) {
-        let mythicalResults = mythicalPokemon.results || [];
-        if (hasGenerationFilter) {
-          mythicalResults = mythicalResults.filter(p => isInGenerations(p.id, advancedFilters.generations));
-        }
-        combinedResults = [...combinedResults, ...mythicalResults];
+
+      if (hasTypeFilter && typePokemon) {
+        const typeSet = typePokemon.pokemonSpecies.map(p => ({ ...p, fromType: true }));
+        validSets.push(typeSet);
       }
-      
-      // Remove duplicates (in case a Pokemon is in both lists)
-      const uniqueIds = new Set();
-      filtered = combinedResults.filter(p => {
-        if (uniqueIds.has(p.id)) return false;
-        uniqueIds.add(p.id);
-        return true;
+
+      if (wantsLegendary && legendaryPokemon?.results) {
+        validSets.push(legendaryPokemon.results);
+      }
+
+      if (wantsMythical && mythicalPokemon?.results) {
+        validSets.push(mythicalPokemon.results);
+      }
+
+      // If we have sets, INTERSECT them (Finding Pokemon that match ALL active criteria? Or UNION?)
+      // Use Cases:
+      // Gen 1 + Fire -> Charizard (Intersection)
+      // Legendary + Fire -> Moltres (Intersection)
+      // Fire + Water -> Volcanion (Union of types usually, but here 'typePokemon' is already Union of selected types via API)
+
+      // So: We INTERSECT the major categories (Gen AND Type AND (Legendary OR Mythical?))
+      // Actually standard filter behavior:
+      // (Gen A OR Gen B) AND (Type A OR Type B) AND (Is Legendary OR Is Mythical)
+
+      // My `typePokemon` is configured as Union (Any of selected types).
+      // My `generationPokemon` is configured as Union (Any of selected gens).
+
+      // So I need to INTERSECT `validSets`.
+      // But wait, Legendary/Mythical are checkboxes. "Show Legendary", "Show Mythical".
+      // If both unchecked -> Show any.
+      // If Legendary checked -> Must be Legendary. 
+      // If Mythical checked -> Must be Mythical.
+      // If both checked -> Legendary OR Mythical (usually).
+
+      // Let's refine the "Special Sets":
+      // Base Pool = Intersection of (Gen Pool if active) AND (Type Pool if active).
+      // Then apply Legendary/Mythical filters on that Pool.
+
+      let basePool = null;
+
+      if (hasGenerationFilter && generationPokemon) {
+        basePool = generationPokemon.pokemonSpecies;
+      }
+
+      if (hasTypeFilter && typePokemon) {
+        if (basePool) {
+          // Intersect
+          const typeIds = new Set(typePokemon.pokemonSpecies.map(p => p.id));
+          basePool = basePool.filter(p => typeIds.has(p.id));
+        } else {
+          basePool = typePokemon.pokemonSpecies;
+        }
+      }
+
+      // If no Gen/Type filter but Legendary/Mythical active
+      if (!basePool && (wantsLegendary || wantsMythical)) {
+        // Start with empty and add
+        basePool = [];
+        if (wantsLegendary && legendaryPokemon) basePool = [...basePool, ...legendaryPokemon.results];
+        if (wantsMythical && mythicalPokemon) basePool = [...basePool, ...mythicalPokemon.results];
+
+        // Remove dupes
+        basePool = Array.from(new Map(basePool.map(p => [p.id, p])).values());
+      } else if (basePool && (wantsLegendary || wantsMythical)) {
+        // Filter the existing pool
+        // Logic: If (L) -> allow L. If (M) -> allow M. If (L & M) -> allow (L or M).
+        const legIds = new Set(legendaryIds);
+        const mythIds = new Set(mythicalIds);
+
+        basePool = basePool.filter(p => {
+          const isLeg = legIds.has(Number(p.id));
+          const isMyth = mythIds.has(Number(p.id));
+          if (wantsLegendary && wantsMythical) return isLeg || isMyth;
+          if (wantsLegendary) return isLeg;
+          if (wantsMythical) return isMyth;
+          return true;
+        });
+      }
+
+      candidates = basePool || [];
+
+      // Map to full details if available
+      candidates = candidates.map(p => detailsMap.get(p.id) || {
+        ...p,
+        types: [], // Missing details
+        height: 0,
+        weight: 0,
+        isLoading: !p.name, // If we just have ID, it's loading? Actually from API we have name.
       });
-    } else if (hasGenerationFilter && generationPokemon) {
-      // Generation-only filter (no legendary/mythical)
-      if (needsGenDetails && generationPokemonDetails) {
-        filtered = generationPokemonDetails.results || [];
-      } else {
-        const generationPokemonData = generationPokemon.pokemonSpecies.map(p => ({
-          id: p.id,
-          name: p.name,
-          types: [],
-          height: 0,
-          weight: 0,
-          isLoading: false,
-          fromGenerationAPI: true,
-        }));
-        filtered = generationPokemonData;
-      }
+
+    } else {
+      // Normal list mode (Infinite Scroll)
+      const baseList = allPokemon.map(p => detailsMap.get(p.id) || p);
+      candidates = baseList;
     }
-    
-    // SECONDARY FILTERS: These apply to the current filtered set
-    
-    // Apply search filter (exclude loading items)
+
+    let filtered = candidates;
+
+    // SECONDARY FILTERS
+
+    // Apply search filter
     if (searchQuery.trim() !== '') {
       filtered = filtered.filter(p =>
-        !p.isLoading && p.name && p.id && (
+        p.name && p.id && (
           p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           p.id.toString().includes(searchQuery)
         )
       );
     }
-    
-    // Apply type filter (only if we have type data available)
-    if (selectedTypes.length > 0) {
-      filtered = filtered.filter(p => {
-        // Skip Pokemon still loading
-        if (p.isLoading) return false;
-        // If Pokemon has types loaded, filter by selected types
-        if (p.types && p.types.length > 0) {
-          return p.types.some(type => selectedTypes.includes(type));
-        }
-        // If types not loaded yet, exclude from results (will appear after details load)
-        return false;
-      });
-    }
-
-    // Apply advanced filters (generation filter is handled above with direct API)
 
     // Height filter
     if (advancedFilters.minHeight) {
-      const minHeight = parseFloat(advancedFilters.minHeight) * 10; // Convert m to decimeters
+      const minHeight = parseFloat(advancedFilters.minHeight) * 10;
       filtered = filtered.filter(p => !p.isLoading && p.height && p.height >= minHeight);
     }
     if (advancedFilters.maxHeight) {
@@ -236,33 +311,30 @@ const HomeScreen = ({ navigation }) => {
 
     // Weight filter
     if (advancedFilters.minWeight) {
-      const minWeight = parseFloat(advancedFilters.minWeight) * 10; // Convert kg to hectograms
+      const minWeight = parseFloat(advancedFilters.minWeight) * 10;
       filtered = filtered.filter(p => !p.isLoading && p.weight && p.weight >= minWeight);
     }
     if (advancedFilters.maxWeight) {
       const maxWeight = parseFloat(advancedFilters.maxWeight) * 10;
-      filtered = filtered.filter(p => !p.isLoading && p.weight && p.weight <= maxWeight);
+      filtered = filtered.filter(p => !p.isLoading && p.weight && p.weight <= maxHeight);
     }
-    
+
     if (advancedFilters.hasEvolution) {
-      // Filter out Pokemon that don't evolve (simplified - exclude some known non-evolving Pokemon)
-      // These are Pokemon that don't evolve in the first 100
       const nonEvolvingIds = [83, 84, 85, 108, 113, 115, 128, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151];
       filtered = filtered.filter(p => !p.isLoading && !nonEvolvingIds.includes(p.id));
     }
-    
+
     // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       if (sortBy === 'number') {
         return (a.id || 0) - (b.id || 0);
       } else {
-        // Keep loading items at end when sorting by name
         if (a.isLoading) return 1;
         if (b.isLoading) return -1;
         return (a.name || '').localeCompare(b.name || '');
       }
     });
-    
+
     return sorted;
   }, [
     allPokemon,
@@ -271,16 +343,19 @@ const HomeScreen = ({ navigation }) => {
     selectedTypes,
     advancedFilters,
     generationPokemon,
+    typePokemon,
     legendaryPokemon,
     mythicalPokemon,
-    generationPokemonDetails,
+    filteredDetails,
     listDetails,
+    legendaryIds,
+    mythicalIds
   ]);
 
   const handlePokemonPress = useCallback((pokemonData) => {
     // Don't navigate if still loading or missing data
     if (pokemonData.isLoading || !pokemonData.id || !pokemonData.name) return;
-    
+
     // Get the filtered Pokemon IDs for swiping
     const filteredIds = filteredPokemon
       .filter(p => !p.isLoading && p.id) // Only include loaded Pokemon with valid IDs
@@ -295,7 +370,7 @@ const HomeScreen = ({ navigation }) => {
           return (pokemonA?.name || '').localeCompare(pokemonB?.name || '');
         }
       });
-    
+
     navigation.navigate('PokemonDetails', {
       pokemonId: pokemonData.id,
       pokemonName: pokemonData.name,
@@ -340,20 +415,23 @@ const HomeScreen = ({ navigation }) => {
   }
 
   // Overlay state for filter-driven fetches
-  const showGenerationOverlay = advancedFilters.generations.length > 0 && (loadingGeneration || fetchingGeneration || loadingGenDetails || fetchingGenDetails);
+  const showGenerationOverlay = advancedFilters.generations.length > 0 && (loadingGeneration || fetchingGeneration || loadingFilteredDetails || fetchingFilteredDetails);
+  const showTypeOverlay = selectedTypes.length > 0 && (loadingType || fetchingType || loadingFilteredDetails || fetchingFilteredDetails);
   const showListDetailsOverlay = needsListDetails && (loadingListDetails || fetchingListDetails);
   const showLegendaryOverlay = advancedFilters.isLegendary && (loadingLegendary || fetchingLegendary);
   const showMythicalOverlay = advancedFilters.isMythical && (loadingMythical || fetchingMythical);
-  const shouldShowOverlay = showGenerationOverlay || showLegendaryOverlay || showMythicalOverlay || showListDetailsOverlay;
+  const shouldShowOverlay = showGenerationOverlay || showTypeOverlay || showLegendaryOverlay || showMythicalOverlay || showListDetailsOverlay;
   const overlayMessage = showGenerationOverlay
     ? 'Loading selected generations...'
-    : showLegendaryOverlay
-    ? 'Loading legendary Pokémon...'
-    : showMythicalOverlay
-    ? 'Loading mythical Pokémon...'
-    : showListDetailsOverlay
-    ? 'Loading Pokémon details for filter...'
-    : 'Loading...';
+    : showTypeOverlay
+      ? 'Loading selected types...'
+      : showLegendaryOverlay
+        ? 'Loading legendary Pokémon...'
+        : showMythicalOverlay
+          ? 'Loading mythical Pokémon...'
+          : showListDetailsOverlay
+            ? 'Loading Pokémon details for filter...'
+            : 'Loading...';
 
   return (
     <View style={styles.container}>
@@ -367,16 +445,16 @@ const HomeScreen = ({ navigation }) => {
             <SearchBar
               value={searchQuery}
               onChangeText={handleSearch}
-              placeholder="Search"
+              placeholder="Search your Pokémon ..."
             />
           </View>
-                  <TouchableOpacity
-                    style={styles.filterButton}
-                    onPress={openAdvancedFilters}
-                  >
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={openAdvancedFilters}
+          >
             <Ionicons name="options-outline" size={24} color={COLORS.primary} />
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.filterButton}
             onPress={() => setShowSortModal(true)}
           >
@@ -384,7 +462,7 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
-      
+
       {/* Type Filter */}
       <TypeFilter
         selectedTypes={selectedTypes}
@@ -419,10 +497,12 @@ const HomeScreen = ({ navigation }) => {
                 advancedFilters.isLegendary || advancedFilters.isMythical
                   ? 'No legendary/mythical Pokemon found. Try loading more Pokemon.'
                   : advancedFilters.generations.length > 0
-                  ? 'Loading Pokemon from selected generations...'
-                  : searchQuery.trim() !== '' || selectedTypes.length > 0 || advancedFilters.minHeight || advancedFilters.maxHeight || advancedFilters.minWeight || advancedFilters.maxWeight || advancedFilters.hasEvolution
-                  ? 'Try adjusting your search or filters'
-                  : 'Loading Pokemon...'
+                    ? 'Loading Pokemon from selected generations...'
+                    : selectedTypes.length > 0
+                      ? 'Loading Pokemon from selected types...'
+                      : searchQuery.trim() !== '' || advancedFilters.minHeight || advancedFilters.maxHeight || advancedFilters.minWeight || advancedFilters.maxWeight || advancedFilters.hasEvolution
+                        ? 'Try adjusting your search or filters'
+                        : 'Loading Pokemon...'
               }
             />
           ) : null
@@ -436,7 +516,7 @@ const HomeScreen = ({ navigation }) => {
         }
       />
       <LoadingOverlay visible={shouldShowOverlay} message={overlayMessage} />
-      
+
       <SortModal
         visible={showSortModal}
         onClose={() => setShowSortModal(false)}
@@ -529,11 +609,11 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 8,
   },
-      emptySubtext: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-      },
+  emptySubtext: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
 });
 
 export default HomeScreen;
