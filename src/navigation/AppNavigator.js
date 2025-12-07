@@ -93,7 +93,7 @@ function TeamStack() {
       <Stack.Screen 
         name="TeamMain" 
         component={TeamBuilderScreen} 
-        options={{ title: 'Team Builder (Beta)' }}
+        options={{ title: 'Team Builder' }}
       />
       <Stack.Screen 
         name="PokemonDetails" 
