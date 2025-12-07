@@ -47,10 +47,24 @@ export default function App() {
 
   useEffect(() => {
     // Register for push notifications
-    registerForPushNotificationsAsync().then(token => {
+    registerForPushNotificationsAsync().then(async (token) => {
       if (token) {
         setExpoPushToken(token);
         console.log('Expo Push Token:', token);
+
+        // TODO: In production, send this token to your backend API
+        // Example: await fetch('https://your-api.com/register-token', {
+        //   method: 'POST',
+        //   body: JSON.stringify({ token, userId: 'user123' })
+        // });
+
+        // For now, save locally for testing
+        try {
+          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+          await AsyncStorage.setItem('@expo_push_token', token);
+        } catch (e) {
+          console.log('Could not save token locally');
+        }
       }
     });
 
